@@ -6,12 +6,27 @@ import "server-only";
  *
  * Variáveis: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_BUCKET (padrão "documentos").
  */
+/** Lê só o campo "role" de uma chave JWT antiga (anon/service_role). Não valida assinatura. */
+function papelDaChave(chave: string): string | null {
+  if (!chave.startsWith("eyJ")) return null;
+  try {
+    return (JSON.parse(Buffer.from(chave.split(".")[1], "base64url").toString("utf8")) as { role?: string }).role ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function config() {
   const url = process.env.SUPABASE_URL?.replace(/\/+$/, "");
   const chave = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const bucket = process.env.SUPABASE_BUCKET || "documentos";
   if (!url || !chave) throw new Error("Configure SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY para usar STORAGE_DRIVER=supabase.");
   if (!/^[a-z0-9-_]+$/i.test(bucket)) throw new Error("SUPABASE_BUCKET inválido.");
+  if (chave.startsWith("sb_publishable_") || papelDaChave(chave) === "anon") {
+    throw new Error(
+      "SUPABASE_SERVICE_ROLE_KEY contém a chave PÚBLICA (anon/publishable). Use a chave secreta (service_role ou sb_secret_…).",
+    );
+  }
   // Chaves novas (sb_secret_…) vão só no cabeçalho apikey; as antigas (JWT service_role) também como Bearer.
   const headers: Record<string, string> = { apikey: chave };
   if (!chave.startsWith("sb_")) headers.Authorization = `Bearer ${chave}`;

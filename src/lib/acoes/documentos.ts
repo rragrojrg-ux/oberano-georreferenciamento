@@ -140,8 +140,16 @@ export async function prepararEnvioDocumento(formData: FormData): Promise<Respos
   if (!Number.isFinite(tamanho) || tamanho <= 0 || tamanho > TAMANHO_MAXIMO) {
     return { ok: false, estado: { erros: { arquivo: ["Arquivo vazio ou maior que 20 MB."] } } };
   }
-  const { nomeArmazenado, url } = await criarUrlDeEnvio(extensao);
-  return { ok: true, url, nomeArmazenado };
+  try {
+    const { nomeArmazenado, url } = await criarUrlDeEnvio(extensao);
+    return { ok: true, url, nomeArmazenado };
+  } catch (e) {
+    console.error("[documentos] falha ao preparar envio:", e);
+    return {
+      ok: false,
+      estado: { mensagem: "O armazenamento de documentos está indisponível ou mal configurado. Avise o administrador do sistema." },
+    };
+  }
 }
 
 /** 2ª fase: baixa o que chegou ao bucket, confere o CONTEÚDO real e só então registra. */
