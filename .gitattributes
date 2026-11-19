@@ -1,0 +1,7 @@
+# Quebras de linha padronizadas (LF) — o build na Vercel roda em Linux.
+* text=auto eol=lf
+# Scripts do Windows mantêm CRLF.
+*.ps1 text eol=crlf
+*.png binary
+*.jpg binary
+*.pdf binary

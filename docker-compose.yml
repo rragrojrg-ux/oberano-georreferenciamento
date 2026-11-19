@@ -1,0 +1,18 @@
+# Banco PostgreSQL para desenvolvimento local.
+# Uso: docker compose up -d
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: soberano-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: soberano
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no arquivo .env}
+      POSTGRES_DB: soberano
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - soberano_pgdata:/var/lib/postgresql/data
+
+volumes:
+  soberano_pgdata:

@@ -1,0 +1,422 @@
+// SOBERANO GEORREFERENCIAMENTO — modelo de dados
+// Valores monetários: Decimal(12,2). Áreas: Decimal(14,4).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  // Na nuvem (Supabase/Neon): DATABASE_URL = conexão com pooler (aplicação); DIRECT_URL = conexão direta (migrações).
+  // Localmente, as duas podem ser iguais.
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ───────────────────────────── Enums ─────────────────────────────
+
+enum Perfil {
+  ADMINISTRADOR
+  VISUALIZADOR
+}
+
+enum TipoPessoa {
+  FISICA
+  JURIDICA
+}
+
+enum StatusServico {
+  AGUARDANDO_INICIO
+  EM_ANDAMENTO
+  PAUSADO
+  CONCLUIDO
+  CANCELADO
+}
+
+enum StatusEtapa {
+  PENDENTE
+  EM_ANDAMENTO
+  CONCLUIDA
+}
+
+enum FormaPagamento {
+  PIX
+  TRANSFERENCIA
+  BOLETO
+  DINHEIRO
+  CHEQUE
+  CARTAO
+  OUTRO
+}
+
+enum CategoriaDocumento {
+  MATRICULA
+  CAR
+  CCIR
+  CONTRATO
+  PLANTA
+  MEMORIAL_DESCRITIVO
+  ARQUIVO_TECNICO
+  COMPROVANTE
+  OUTRO
+}
+
+enum AcaoHistorico {
+  CRIAR
+  ATUALIZAR
+  EXCLUIR
+  LOGIN
+  LOGIN_FALHA
+  LOGOUT
+  DOWNLOAD
+}
+
+// ─────────────────────── Usuários e sessões ───────────────────────
+
+model Usuario {
+  id                String    @id @default(cuid())
+  nome              String
+  email             String    @unique
+  senhaHash         String
+  perfil            Perfil    @default(VISUALIZADOR)
+  ativo             Boolean   @default(true)
+  tentativasFalhas  Int       @default(0)
+  bloqueadoAte      DateTime?
+  ultimoAcesso      DateTime?
+  criadoEm          DateTime  @default(now())
+  atualizadoEm      DateTime  @updatedAt
+
+  sessoes           Sessao[]
+  historico         HistoricoAlteracao[]
+  documentosEnviados Documento[]
+
+  @@map("usuarios")
+}
+
+/// O cookie guarda apenas o token aleatório; o banco guarda somente seu hash SHA-256.
+model Sessao {
+  id          String   @id @default(cuid())
+  tokenHash   String   @unique
+  usuarioId   String
+  expiraEm    DateTime
+  ip          String?
+  userAgent   String?
+  criadoEm    DateTime @default(now())
+
+  usuario     Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+  @@map("sessoes")
+}
+
+// ───────────────────── Clientes e propriedades ─────────────────────
+
+model Cliente {
+  id            String     @id @default(cuid())
+  tipoPessoa    TipoPessoa @default(FISICA)
+  nome          String     /// Nome completo ou razão social
+  documento     String     @unique /// CPF ou CNPJ, apenas dígitos
+  telefone      String?
+  email         String?
+  municipio     String
+  uf            String     @db.Char(2)
+  observacoes   String?
+  dataCadastro  DateTime   @default(now())
+  atualizadoEm  DateTime   @updatedAt
+
+  propriedades  Propriedade[]
+  servicos      Servico[]
+  documentos    Documento[]
+
+  @@index([nome])
+  @@index([municipio])
+  @@map("clientes")
+}
+
+model Propriedade {
+  id              String   @id @default(cuid())
+  clienteId       String
+  nome            String
+  municipio       String
+  uf              String   @db.Char(2)
+  areaHectares    Decimal  @db.Decimal(14, 4)
+  /// Calculada: areaHectares / 4,84 (alqueire mineiro). Armazenada para consultas e relatórios.
+  areaAlqueires   Decimal  @db.Decimal(14, 4)
+  matricula       String?
+  cartorio        String?
+  codigoIncra     String?
+  ccir            String?
+  car             String?
+  observacoes     String?
+  criadoEm        DateTime @default(now())
+  atualizadoEm    DateTime @updatedAt
+
+  cliente         Cliente  @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  servicos        ServicoPropriedade[]
+  documentos      Documento[]
+
+  @@index([clienteId])
+  @@index([municipio])
+  @@map("propriedades")
+}
+
+// ───────────────────────── Serviços e etapas ─────────────────────────
+
+model TipoServico {
+  id          String   @id @default(cuid())
+  nome        String   @unique
+  descricao   String?
+  ativo       Boolean  @default(true)
+  criadoEm    DateTime @default(now())
+
+  etapasModelo EtapaModelo[]
+  servicos     Servico[]
+
+  @@map("tipos_servico")
+}
+
+/// Etapas padrão configuráveis por tipo de serviço (copiadas para o serviço ao ser criado).
+model EtapaModelo {
+  id             String      @id @default(cuid())
+  tipoServicoId  String
+  ordem          Int
+  nome           String
+
+  tipoServico    TipoServico @relation(fields: [tipoServicoId], references: [id], onDelete: Cascade)
+
+  @@unique([tipoServicoId, ordem])
+  @@map("etapas_modelo")
+}
+
+model Servico {
+  id                   String        @id @default(cuid())
+  codigo               String        @unique /// Ex.: SRV-2026-0001
+  clienteId            String
+  tipoServicoId        String
+  descricaoPersonalizada String?     /// Para "Outros serviços personalizados"
+  dataContratacao      DateTime      @db.Date
+  valorContratado      Decimal       @db.Decimal(12, 2)
+  prazoPrevisto        DateTime?     @db.Date
+  status               StatusServico @default(AGUARDANDO_INICIO)
+  responsavelTecnico   String?
+  observacoes          String?
+  concluidoEm          DateTime?
+  criadoEm             DateTime      @default(now())
+  atualizadoEm         DateTime      @updatedAt
+
+  cliente              Cliente       @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  tipoServico          TipoServico   @relation(fields: [tipoServicoId], references: [id], onDelete: Restrict)
+  propriedades         ServicoPropriedade[]
+  etapas               Etapa[]
+  despesas             Despesa[]
+  deslocamentos        Deslocamento[]
+  usosMaterial         UsoMaterial[]
+  pagamentos           Pagamento[]
+  documentos           Documento[]
+
+  @@index([clienteId])
+  @@index([status])
+  @@index([dataContratacao])
+  @@map("servicos")
+}
+
+/// Um serviço pode abranger várias propriedades (N:N).
+model ServicoPropriedade {
+  servicoId      String
+  propriedadeId  String
+
+  servico        Servico     @relation(fields: [servicoId], references: [id], onDelete: Cascade)
+  propriedade    Propriedade @relation(fields: [propriedadeId], references: [id], onDelete: Restrict)
+
+  @@id([servicoId, propriedadeId])
+  @@map("servicos_propriedades")
+}
+
+model Etapa {
+  id            String      @id @default(cuid())
+  servicoId     String
+  ordem         Int
+  nome          String
+  status        StatusEtapa @default(PENDENTE)
+  dataInicio    DateTime?   @db.Date
+  dataConclusao DateTime?   @db.Date
+  observacoes   String?
+
+  servico       Servico     @relation(fields: [servicoId], references: [id], onDelete: Cascade)
+
+  @@unique([servicoId, ordem])
+  @@map("etapas")
+}
+
+// ───────────────────────────── Despesas ─────────────────────────────
+
+model CategoriaDespesa {
+  id        String   @id @default(cuid())
+  nome      String   @unique
+  /// Categorias de sistema (Quilometragem, Marcos geodésicos) são alimentadas pelos módulos próprios.
+  sistema   Boolean  @default(false)
+  ativo     Boolean  @default(true)
+
+  despesas  Despesa[]
+
+  @@map("categorias_despesa")
+}
+
+/// Livro único de despesas por serviço. Deslocamentos e usos de material geram exatamente
+/// UMA despesa vinculada (chaves únicas), o que impede contabilização em duplicidade.
+model Despesa {
+  id              String   @id @default(cuid())
+  servicoId       String
+  categoriaId     String
+  data            DateTime @db.Date
+  descricao       String
+  quantidade      Decimal? @db.Decimal(12, 3)
+  valorUnitario   Decimal? @db.Decimal(12, 2)
+  valorTotal      Decimal  @db.Decimal(12, 2)
+  observacoes     String?
+  deslocamentoId  String?  @unique
+  usoMaterialId   String?  @unique
+  criadoEm        DateTime @default(now())
+  atualizadoEm    DateTime @updatedAt
+
+  servico         Servico          @relation(fields: [servicoId], references: [id], onDelete: Cascade)
+  categoria       CategoriaDespesa @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
+  deslocamento    Deslocamento?    @relation(fields: [deslocamentoId], references: [id], onDelete: Cascade)
+  usoMaterial     UsoMaterial?     @relation(fields: [usoMaterialId], references: [id], onDelete: Cascade)
+  comprovantes    Documento[]
+
+  @@index([servicoId])
+  @@index([data])
+  @@map("despesas")
+}
+
+model Deslocamento {
+  id            String   @id @default(cuid())
+  servicoId     String
+  data          DateTime @db.Date
+  origem        String
+  destino       String
+  km            Decimal  @db.Decimal(10, 1)
+  custoPorKm    Decimal  @db.Decimal(10, 2) /// Valor vigente no lançamento (histórico preservado)
+  valorTotal    Decimal  @db.Decimal(12, 2)
+  observacoes   String?
+  criadoEm      DateTime @default(now())
+
+  servico       Servico  @relation(fields: [servicoId], references: [id], onDelete: Cascade)
+  despesa       Despesa?
+
+  @@index([servicoId])
+  @@map("deslocamentos")
+}
+
+model TipoMaterial {
+  id                 String   @id @default(cuid())
+  nome               String   @unique /// Ex.: Marco de concreto, Chapa de identificação, Piquete
+  unidade            String   @default("un")
+  custoUnitarioPadrao Decimal? @db.Decimal(12, 2)
+  ativo              Boolean  @default(true)
+
+  usos               UsoMaterial[]
+
+  @@map("tipos_material")
+}
+
+model UsoMaterial {
+  id              String   @id @default(cuid())
+  servicoId       String
+  tipoMaterialId  String
+  data            DateTime @db.Date
+  quantidade      Decimal  @db.Decimal(12, 3)
+  custoUnitario   Decimal  @db.Decimal(12, 2)
+  valorTotal      Decimal  @db.Decimal(12, 2)
+  observacoes     String?
+  criadoEm        DateTime @default(now())
+
+  servico         Servico      @relation(fields: [servicoId], references: [id], onDelete: Cascade)
+  tipoMaterial    TipoMaterial @relation(fields: [tipoMaterialId], references: [id], onDelete: Restrict)
+  despesa         Despesa?
+
+  @@index([servicoId])
+  @@map("usos_material")
+}
+
+// ───────────────────────────── Financeiro ─────────────────────────────
+
+model Pagamento {
+  id                String         @id @default(cuid())
+  servicoId         String
+  data              DateTime       @db.Date
+  valor             Decimal        @db.Decimal(12, 2)
+  forma             FormaPagamento @default(PIX)
+  descricao         String?
+  /// Gerada pelo formulário; impede que um duplo envio grave o mesmo pagamento duas vezes.
+  chaveIdempotencia String         @unique
+  criadoEm          DateTime       @default(now())
+
+  servico           Servico        @relation(fields: [servicoId], references: [id], onDelete: Cascade)
+
+  @@index([servicoId])
+  @@index([data])
+  @@map("pagamentos")
+}
+
+/// Parâmetros configuráveis (ex.: custo_por_km).
+model Configuracao {
+  chave        String   @id
+  valor        String
+  descricao    String?
+  atualizadoEm DateTime @updatedAt
+
+  @@map("configuracoes")
+}
+
+// ───────────────────────────── Documentos ─────────────────────────────
+
+/// Metadados. O arquivo fica em armazenamento privado (fora de /public), com nome aleatório.
+model Documento {
+  id               String             @id @default(cuid())
+  categoria        CategoriaDocumento
+  nomeOriginal     String
+  nomeArmazenado   String             @unique
+  mimeType         String
+  tamanhoBytes     Int
+  hashSha256       String
+  descricao        String?
+  clienteId        String?
+  propriedadeId    String?
+  servicoId        String?
+  despesaId        String?
+  enviadoPorId     String
+  criadoEm         DateTime           @default(now())
+
+  cliente          Cliente?     @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  propriedade      Propriedade? @relation(fields: [propriedadeId], references: [id], onDelete: SetNull)
+  servico          Servico?     @relation(fields: [servicoId], references: [id], onDelete: SetNull)
+  despesa          Despesa?     @relation(fields: [despesaId], references: [id], onDelete: SetNull)
+  enviadoPor       Usuario      @relation(fields: [enviadoPorId], references: [id], onDelete: Restrict)
+
+  @@index([clienteId])
+  @@index([propriedadeId])
+  @@index([servicoId])
+  @@map("documentos")
+}
+
+// ─────────────────────────── Auditoria ───────────────────────────
+
+model HistoricoAlteracao {
+  id          String        @id @default(cuid())
+  usuarioId   String?
+  acao        AcaoHistorico
+  entidade    String
+  entidadeId  String?
+  /// Resumo da alteração. Não registrar senhas nem documentos pessoais completos.
+  detalhes    Json?
+  ip          String?
+  criadoEm    DateTime      @default(now())
+
+  usuario     Usuario?      @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+
+  @@index([entidade, entidadeId])
+  @@index([criadoEm])
+  @@map("historico_alteracoes")
+}

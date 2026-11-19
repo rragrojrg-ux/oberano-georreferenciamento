@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+/* Identidade visual SOBERANO — azul-marinho + dourado */
+@theme {
+  --color-marinho-50: #eef2f8;
+  --color-marinho-100: #d6deec;
+  --color-marinho-200: #aebdd8;
+  --color-marinho-300: #7d93bb;
+  --color-marinho-400: #4f6a9c;
+  --color-marinho-500: #33507f;
+  --color-marinho-600: #26477f;
+  --color-marinho-700: #1c3767;
+  --color-marinho-800: #13294f;
+  --color-marinho-900: #0b1f3f;
+  --color-marinho-950: #06132b;
+
+  --color-dourado-50: #fbf7e9;
+  --color-dourado-100: #f5ebc7;
+  --color-dourado-200: #eedb9d;
+  --color-dourado-300: #e5c86e;
+  --color-dourado-400: #dab54a;
+  --color-dourado-500: #c9a227;
+  --color-dourado-600: #a8841b;
+  --color-dourado-700: #846716;
+
+  --color-fundo: #f4f6fa;
+
+  /* Séries dos gráficos (ordem fixa) */
+  --color-serie-contratado: #2f5aa8;
+  --color-serie-recebido: #c9a227;
+  --color-serie-despesas: #b4533a;
+
+  --font-sans: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--color-fundo);
+  color: #1f2937;
+}
+
+/* Foco visível e consistente em toda a aplicação */
+:focus-visible {
+  outline: 2px solid var(--color-dourado-500);
+  outline-offset: 2px;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}
